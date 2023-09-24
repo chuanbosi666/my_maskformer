@@ -112,19 +112,19 @@ class TransformerPredictor(nn.Module):
         return ret
 
     def forward(self, x, mask_features):
-        pos = self.pe_layer(x)
+        pos = self.pe_layer(x)  # 首先进行位置编码的操作
 
         src = x
         mask = None
-        hs, memory = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos)
+        hs, memory = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos)  # 进行transformer的操作
 
-        if self.mask_classification:
-            outputs_class = self.class_embed(hs)
-            out = {"pred_logits": outputs_class[-1]}
+        if self.mask_classification:  # 是否进行mask分类
+            outputs_class = self.class_embed(hs)  # 会将其进行线性的变换
+            out = {"pred_logits": outputs_class[-1]}  # 将最后一层的输出作为输出
         else:
             out = {}
 
-        if self.aux_loss:
+        if self.aux_loss:  # 是否进行辅助损失
             # [l, bs, queries, embed]
             mask_embed = self.mask_embed(hs)
             outputs_seg_masks = torch.einsum("lbqc,bchw->lbqhw", mask_embed, mask_features)
@@ -132,12 +132,12 @@ class TransformerPredictor(nn.Module):
             out["aux_outputs"] = self._set_aux_loss(
                 outputs_class if self.mask_classification else None, outputs_seg_masks
             )
-        else:
+        else:# 不进行辅助损失
             # FIXME h_boxes takes the last one computed, keep this in mind
             # [bs, queries, embed]
-            mask_embed = self.mask_embed(hs[-1])
-            outputs_seg_masks = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
-            out["pred_masks"] = outputs_seg_masks
+            mask_embed = self.mask_embed(hs[-1])  # 将最后一层的输出作为输出
+            outputs_seg_masks = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)  # 然后将其与mask_features进行点乘
+            out["pred_masks"] = outputs_seg_masks  # 将得到的结果作为输出的预测mask
         return out
 
     @torch.jit.unused
