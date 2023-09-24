@@ -85,7 +85,7 @@ class MaskFormerHead(nn.Module):
         self.num_classes = num_classes
 
     @classmethod
-    def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
+    def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):  # 对参数进行解析
         return {
             "input_shape": {
                 k: v for k, v in input_shape.items() if k in cfg.MODEL.SEM_SEG_HEAD.IN_FEATURES
@@ -105,15 +105,15 @@ class MaskFormerHead(nn.Module):
         }
 
     def forward(self, features):
-        return self.layers(features)
+        return self.layers(features)  # layers函数在下面定义
 
-    def layers(self, features):
-        mask_features, transformer_encoder_features = self.pixel_decoder.forward_features(features)
-        if self.transformer_in_feature == "transformer_encoder":
+    def layers(self, features):  # 传进来的features是backbone的输出
+        mask_features, transformer_encoder_features = self.pixel_decoder.forward_features(features)  # 将特征传给pixel_decoder，得到mask_features和transformer_encoder_features
+        if self.transformer_in_feature == "transformer_encoder":  # 如果transformer_in_feature是transformer_encoder,也就是进行了transformer_encoder
             assert (
                 transformer_encoder_features is not None
-            ), "Please use the TransformerEncoderPixelDecoder."
-            predictions = self.predictor(transformer_encoder_features, mask_features)
+            ), "Please use the TransformerEncoderPixelDecoder."  # 断言transformer_encoder_features不为空
+            predictions = self.predictor(transformer_encoder_features, mask_features)  # 然后将transformer_encoder_features和mask_features传给predictor，predictor会对传进来的特征进行预测，像遮掩分类，辅助损失的预测
         else:
             predictions = self.predictor(features[self.transformer_in_feature], mask_features)
-        return predictions
+        return predictions  # 返回预测结果
