@@ -696,7 +696,7 @@ class SwinTransformer(nn.Module):
         self._freeze_stages()
 
 
-@BACKBONE_REGISTRY.register()
+@BACKBONE_REGISTRY.register()  # 通过这一步可以发现我们的backbone已经被注册到了registry中，可以直接通过BACKBONE_REGISTRY：D2SwinTransformer的实例来调用
 class D2SwinTransformer(SwinTransformer, Backbone):  # 这个类继承了SwinTransformer和Backbone，是为了适用于特定的深度学习任务
     def __init__(self, cfg, input_shape):
 
