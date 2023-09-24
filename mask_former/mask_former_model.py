@@ -7,6 +7,7 @@ from torch.nn import functional as F
 
 from detectron2.config import configurable
 from detectron2.data import MetadataCatalog
+ # 调来detectron2.modeling中的build_backbone和build_sem_seg_head函数，以及我们自己定义的META_ARCH_REGISTRY
 from detectron2.modeling import META_ARCH_REGISTRY, build_backbone, build_sem_seg_head
 from detectron2.modeling.backbone import Backbone
 from detectron2.modeling.postprocessing import sem_seg_postprocess
@@ -16,7 +17,7 @@ from .modeling.criterion import SetCriterion
 from .modeling.matcher import HungarianMatcher
 
 
-@META_ARCH_REGISTRY.register()
+@META_ARCH_REGISTRY.register()  # 使用这个装饰器注册到全局的META_ARCH_REGISTRY中，可以直接通过META_ARCHITECTURE: "MaskFormer"来调用
 class MaskFormer(nn.Module):
     """
     Main class for mask classification semantic segmentation architectures.
@@ -61,49 +62,51 @@ class MaskFormer(nn.Module):
                 the per-channel mean and std to be used to normalize the input image
         """
         super().__init__()
-        self.backbone = backbone
-        self.sem_seg_head = sem_seg_head
-        self.criterion = criterion
-        self.num_queries = num_queries
-        self.overlap_threshold = overlap_threshold
-        self.panoptic_on = panoptic_on
-        self.object_mask_threshold = object_mask_threshold
-        self.metadata = metadata
-        if size_divisibility < 0:
+        self.backbone = backbone  # backbone是一个Backbone类的实例，Backbone类继承自nn.Module
+        self.sem_seg_head = sem_seg_head  # 对分割头进行初始化
+        self.criterion = criterion  # 定义损失的模块
+        self.num_queries = num_queries  # 一个图片中最多的物体数量
+        self.overlap_threshold = overlap_threshold  # panoptic分割通用推理中使用的重叠阈值
+        self.panoptic_on = panoptic_on  # 是否进行panoptic分割
+        self.object_mask_threshold = object_mask_threshold  # 用于过滤基于分类分数的查询的阈值，用于全景分割推理
+        self.metadata = metadata # 用于获取物质或物体类别名称以供panoptic分割推理使用
+        if size_divisibility < 0: # size_divisibility是一个整数，用于指定输入图像的高度和宽度是否必须是特定整数的倍数
             # use backbone size_divisibility if not set
             size_divisibility = self.backbone.size_divisibility
         self.size_divisibility = size_divisibility
-        self.sem_seg_postprocess_before_inference = sem_seg_postprocess_before_inference
+        self.sem_seg_postprocess_before_inference = sem_seg_postprocess_before_inference  # 是否在语义分割推理之前或之后将预测调整回原始输入大小
         self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
-        self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
+        self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)  # 将pixel_mean和pixel_std注册为buffer（缓冲区），这样在保存模型时就不会保存这两个参数了
 
-    @classmethod
+    @classmethod  # 调用这个装饰器，可以直接通过from_config(cfg)来调用，将函数直接变成的类的静态方法
     def from_config(cls, cfg):
+        #直接调用detectron2.modeling.build_backbone函数，返回一个Backbone类的实例，这个实例会是我们的创建好backbone
         backbone = build_backbone(cfg)
+        # 直接调用detectron2.modeling.build_sem_seg_head函数，返回一个MaskFormerHead，传进去的参数是cfg和backbone.output_shape()
         sem_seg_head = build_sem_seg_head(cfg, backbone.output_shape())
 
-        # Loss parameters:
+        # Loss parameters: 定义损失函数的参数
         deep_supervision = cfg.MODEL.MASK_FORMER.DEEP_SUPERVISION
         no_object_weight = cfg.MODEL.MASK_FORMER.NO_OBJECT_WEIGHT
         dice_weight = cfg.MODEL.MASK_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.MASK_FORMER.MASK_WEIGHT
 
-        # building criterion
+        # building criterion  构建损失函数，这里使用的是SetCriterion类
         matcher = HungarianMatcher(
             cost_class=1,
             cost_mask=mask_weight,
             cost_dice=dice_weight,
         )
-
+        # 用于配置各项损失的权重
         weight_dict = {"loss_ce": 1, "loss_mask": mask_weight, "loss_dice": dice_weight}
-        if deep_supervision:
+        if deep_supervision:  # 当启用深度监督时，将权重分配给每个预测头，进行更新
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
             aux_weight_dict = {}
             for i in range(dec_layers - 1):
                 aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
             weight_dict.update(aux_weight_dict)
 
-        losses = ["labels", "masks"]
+        losses = ["labels", "masks"]  # 定义损失函数的类型，会有labels和masks两种类型
 
         criterion = SetCriterion(
             sem_seg_head.num_classes,
@@ -111,7 +114,7 @@ class MaskFormer(nn.Module):
             weight_dict=weight_dict,
             eos_coef=no_object_weight,
             losses=losses,
-        )
+        )  # 构建用于计算损失的SetCriterion类的实例
 
         return {
             "backbone": backbone,
@@ -129,11 +132,11 @@ class MaskFormer(nn.Module):
             ),
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
-        }
+        }  # 返回一个字典，包含了所有的参数，用于构建MaskFormer类的实例
 
     @property
     def device(self):
-        return self.pixel_mean.device
+        return self.pixel_mean.device  # 返回pixel_mean的设备
 
     def forward(self, batched_inputs):
         """
@@ -161,12 +164,12 @@ class MaskFormer(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        images = ImageList.from_tensors(images, self.size_divisibility)
+        images = [x["image"].to(self.device) for x in batched_inputs]  # 获取图像
+        images = [(x - self.pixel_mean) / self.pixel_std for x in images]  # 对图像进行中心化和标准化处理
+        images = ImageList.from_tensors(images, self.size_divisibility)  # 对图像进行预处理，将
 
-        features = self.backbone(images.tensor)
-        outputs = self.sem_seg_head(features)
+        features = self.backbone(images.tensor)  # 将图片转成tensor，然后送入backbone中，得到backbone的输出
+        outputs = self.sem_seg_head(features)  # 将backbone的输出送入sem_seg_head中，得到sem_seg_head的输出
 
         if self.training:
             # mask classification target
@@ -188,8 +191,8 @@ class MaskFormer(nn.Module):
 
             return losses
         else:
-            mask_cls_results = outputs["pred_logits"]
-            mask_pred_results = outputs["pred_masks"]
+            mask_cls_results = outputs["pred_logits"]  # 获得预测的mask分类结果，也就是class prediction
+            mask_pred_results = outputs["pred_masks"]  # 获得预测的mask
             # upsample masks
             mask_pred_results = F.interpolate(
                 mask_pred_results,
@@ -211,7 +214,7 @@ class MaskFormer(nn.Module):
                     )
 
                 # semantic segmentation inference
-                r = self.semantic_inference(mask_cls_result, mask_pred_result)
+                r = self.semantic_inference(mask_cls_result, mask_pred_result)  # 最后一步进行语义分割的推理
                 if not self.sem_seg_postprocess_before_inference:
                     r = sem_seg_postprocess(r, image_size, height, width)
                 processed_results.append({"sem_seg": r})
@@ -221,7 +224,7 @@ class MaskFormer(nn.Module):
                     panoptic_r = self.panoptic_inference(mask_cls_result, mask_pred_result)
                     processed_results[-1]["panoptic_seg"] = panoptic_r
 
-            return processed_results
+            return processed_results  # 返回推理的结果
 
     def prepare_targets(self, targets, images):
         h, w = images.tensor.shape[-2:]
