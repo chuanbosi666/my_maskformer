@@ -137,7 +137,7 @@ class TransformerPredictor(nn.Module):
             # [bs, queries, embed]
             mask_embed = self.mask_embed(hs[-1])  # 将最后一层的输出作为输出
             outputs_seg_masks = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)  # 然后将其与mask_features进行点乘
-            out["pred_masks"] = outputs_seg_masks  # 将得到的结果作为输出的预测mask
+            out["pred_masks"] = outputs_seg_masks  # 将得到的结果作为输出的预测mask，会在model里与类别预测一起进行计算
         return out
 
     @torch.jit.unused
